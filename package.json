@@ -1,6 +1,6 @@
 {
   "name": "algotest",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Testing utils for Algorand projects",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
