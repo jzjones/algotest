@@ -8,7 +8,8 @@
   "author": "jzjones <josephzacharyjones@gmail.com>",
   "license": "MIT",
   "files": [
-    "lib/**/*"
+    "lib/**/*",
+    "docker/**/*"
   ],
   "scripts": {
     "prepare": "npm run build",
