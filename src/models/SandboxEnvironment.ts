@@ -20,45 +20,33 @@ import {
 
 const algodToken = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-function getRandomInt(min: number, max: number) {
-  min = Math.ceil(min);
-  max = Math.floor(max);
-  return Math.floor(Math.random() * (max - min) + min);
-}
 
 export default class SandboxEnvironment {
   algodContainer: StartedTestContainer | null = null;
   environment: StartedDockerComposeEnvironment | null = null;
   algodClient: Algodv2 = new Algodv2("", "http://localhost");
   account: Account = generateAccount();
-  port: number | null = null;
-  kmdPort: number | null = null;
   private _environment: DockerComposeEnvironment;
 
   constructor () {
-    this.port = getRandomInt(10000, 60000);
-    this.kmdPort = this.port! + 1;
     this._environment = new DockerComposeEnvironment(path.resolve(__dirname, "../../docker"), "docker-compose.yaml")
-      .withEnv('PORT1', String(this.port))
-      .withEnv('PORT2', String(this.kmdPort))
       .withWaitStrategy("algod_1", Wait.forLogMessage("http server started on [::]:4001"));
   }
 
   async up() {
     this.environment = await this._environment.up();
     this.algodContainer = this.environment.getContainer("algod_1");
-
     const algodServer = `http://${this.algodContainer.getHost()}`;
     this.algodClient = new Algodv2(
       algodToken,
       algodServer,
-      this.port!
+      this.algodContainer.getMappedPort(4001)
     );
 
     process.env.ALGOD_TOKEN = algodToken;
     process.env.ALGOD_AUTH_HEADER = "X-Algo-API-Token";
     process.env.ALGOD_SERVER = algodServer;
-    process.env.ALGOD_PORT = String(this.port);
+    process.env.ALGOD_PORT = String(this.algodContainer.getMappedPort(4001));
 
     await this.setSandboxAccount();
   }
@@ -70,7 +58,7 @@ export default class SandboxEnvironment {
       const kmdClient = new Kmd(
         algodToken,
         algodServer,
-        this.kmdPort!
+        this.algodContainer.getMappedPort(4002)
       );
 
       const wallets = await kmdClient.listWallets();
