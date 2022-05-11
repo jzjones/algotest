@@ -20,6 +20,7 @@ import {
 
 const algodToken = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
+
 export default class SandboxEnvironment {
   algodContainer: StartedTestContainer | null = null;
   environment: StartedDockerComposeEnvironment | null = null;
@@ -35,7 +36,6 @@ export default class SandboxEnvironment {
   async up() {
     this.environment = await this._environment.up();
     this.algodContainer = this.environment.getContainer("algod_1");
-
     const algodServer = `http://${this.algodContainer.getHost()}`;
     this.algodClient = new Algodv2(
       algodToken,
@@ -46,7 +46,7 @@ export default class SandboxEnvironment {
     process.env.ALGOD_TOKEN = algodToken;
     process.env.ALGOD_AUTH_HEADER = "X-Algo-API-Token";
     process.env.ALGOD_SERVER = algodServer;
-    process.env.ALGOD_PORT = (4001).toString();
+    process.env.ALGOD_PORT = String(this.algodContainer.getMappedPort(4001));
 
     await this.setSandboxAccount();
   }
