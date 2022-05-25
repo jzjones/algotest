@@ -3,15 +3,21 @@ import {
   DockerComposeEnvironment,
   StartedDockerComposeEnvironment,
   StartedTestContainer,
-  Wait
+  GenericContainer,
+  Wait,
+  Network,
+  TestContainers,
+  StartedNetwork,
 } from "testcontainers";
+
 import {
   Algodv2,
   Kmd,
   secretKeyToMnemonic,
   mnemonicToSecretKey,
   Account,
-  generateAccount
+  generateAccount,
+  Indexer,
 } from "algosdk";
 
 import {
@@ -20,23 +26,73 @@ import {
 
 const algodToken = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
+
 export default class SandboxEnvironment {
-  algodContainer: StartedTestContainer | null = null;
-  environment: StartedDockerComposeEnvironment | null = null;
+  algodContainer: StartedTestContainer | any | null = null;
+  indexerContainer: StartedTestContainer | any | null = null;
+  indexerdbContainer: StartedTestContainer | any | null = null;
   algodClient: Algodv2 = new Algodv2("", "http://localhost");
+  indexerClient: Indexer = new Indexer("", "http://localhost");
+  indexNetwork: StartedNetwork | null = null;
   account: Account = generateAccount();
-  private _environment: DockerComposeEnvironment;
 
   constructor () {
-    this._environment = new DockerComposeEnvironment(path.resolve(__dirname, "../../docker"), "docker-compose.yaml")
-      .withWaitStrategy("algod_1", Wait.forLogMessage("http server started on [::]:4001"));
   }
 
-  async up() {
-    this.environment = await this._environment.up();
-    this.algodContainer = this.environment.getContainer("algod_1");
+  async up({indexer = false }: {indexer?: Boolean}={}) {
+    let algodServer = null
+    if(indexer)
+    {
+      this.indexNetwork = await new Network().start();
+      this.algodContainer = await new GenericContainer("makerxau/algorand-sandbox-dev")
+      .withNetworkAliases('algod')
+      .withNetworkMode(this.indexNetwork.getName())
+      .withExposedPorts(4001, 4002)
+      .withWaitStrategy(Wait.forLogMessage("http server started on [::]:4001"))
+      .start();
 
-    const algodServer = `http://${this.algodContainer.getHost()}`;
+      algodServer = `http://${this.algodContainer.getHost()}`;
+
+      this.indexerdbContainer = await new GenericContainer("postgres:13-alpine")
+        .withNetworkAliases('indexer-db')
+        .withNetworkMode(this.indexNetwork.getName())
+        .withExposedPorts(5432)
+        .withWaitStrategy(Wait.forLogMessage("database system is ready to accept connections"))
+        .withUser('postgres')
+        .withEnv("POSTGRES_USER", "algorand")
+        .withEnv("POSTGRES_PASSWORD", "algorand")
+        .withEnv("POSTGRES_DB", "indexer_db")
+        .start()
+      
+      
+      this.indexerContainer = await new GenericContainer("makerxau/algorand-indexer-dev")
+        .withNetworkMode(this.indexNetwork.getName())
+        .withExposedPorts(8980)
+        .withEnv("ALGOD_HOST", "algod")
+        .withEnv("POSTGRES_HOST", "indexer-db")
+        .withEnv("POSTGRES_USER", "algorand")
+        .withEnv("POSTGRES_PASSWORD", "algorand")
+        .withEnv("POSTGRES_DB", "indexer_db")
+        .withEnv("POSTGRES_PORT", String(5432))
+        .withWaitStrategy(Wait.forLogMessage("http server started on [::]:8980"))
+        .start();
+
+        this.indexerClient = new Indexer(
+          algodToken,
+          algodServer,
+          this.indexerContainer.getMappedPort(8980)
+        );
+    }
+    else
+    {
+      this.algodContainer = await new GenericContainer("makerxau/algorand-sandbox-dev")
+        .withNetworkAliases('algod')
+        .withExposedPorts(4001, 4002)
+        .withWaitStrategy(Wait.forLogMessage("http server started on [::]:4001"))
+        .start();
+      algodServer = `http://${this.algodContainer.getHost()}`;
+    }
+
     this.algodClient = new Algodv2(
       algodToken,
       algodServer,
@@ -46,7 +102,7 @@ export default class SandboxEnvironment {
     process.env.ALGOD_TOKEN = algodToken;
     process.env.ALGOD_AUTH_HEADER = "X-Algo-API-Token";
     process.env.ALGOD_SERVER = algodServer;
-    process.env.ALGOD_PORT = (4001).toString();
+    process.env.ALGOD_PORT = String(this.algodContainer.getMappedPort(4001));
 
     await this.setSandboxAccount();
   }
@@ -89,6 +145,17 @@ export default class SandboxEnvironment {
   }
 
   async down() {
-    await this.environment?.down();
+    if(this.algodContainer)
+    {
+      await this.algodContainer?.stop()
+    }
+    if(this.indexerdbContainer)
+    {
+      await this.indexerdbContainer?.stop()
+    }
+    if(this.indexerContainer)
+    {
+      await this.indexerContainer?.stop()
+    }
   }
 }
