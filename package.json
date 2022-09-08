@@ -21,7 +21,7 @@
     "docs": "typedoc src/index.ts --options typedoc.config.json"
   },
   "dependencies": {
-    "algosdk": "^1.14.0",
+    "algosdk": "^1.19.1",
     "algoutils": "^0.0.1",
     "testcontainers": "^8.4.0"
   },
